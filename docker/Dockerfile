@@ -8,12 +8,14 @@ ENV TZ=America/New_York
 
 RUN apk add --update \
   dpkg iptables gawk tzdata \
-  wireguard-tools tcpdump nginx nginx-mod-stream supervisor openssl certbot
+  wireguard-tools conntrack-tools tcpdump nginx nginx-mod-stream supervisor openssl certbot \
+  && apk add --no-cache fluent-bit --repository=http://dl-cdn.alpinelinux.org/alpine/edge/testing
 
 COPY docker/resources/crontabs /etc/crontabs/
 COPY docker/resources/nginx /etc/nginx/
 COPY docker/resources/openssl /etc/openssl/
 COPY docker/resources/supervisor /etc/supervisor/
+COPY docker/resources/fluent-bit /etc/fluent-bit/
 
 RUN mkdir -p /var/log/supervisor \
   && mkdir -p /var/www/letsencrypt \
@@ -42,6 +44,7 @@ COPY --chown=node:node . .
 FROM base AS build
 
 ARG OAUTH2PROXY_VERSION="7.9.0"
+ARG NGINX_EXPORTER_VERSION="1.4.2"
 
 RUN apk add --update curl \
   && curl -sL https://github.com/oauth2-proxy/oauth2-proxy/releases/download/v${OAUTH2PROXY_VERSION}/oauth2-proxy-v${OAUTH2PROXY_VERSION}.linux-amd64.tar.gz -o /tmp/oauth2-proxy.tar.gz \
@@ -86,9 +89,12 @@ COPY --from=build /usr/bin/oauth2-proxy /usr/bin/oauth2-proxy
 COPY --chown=node:node --from=build /app/node_modules /app/node_modules
 COPY --chown=node:node --from=build /app/dist /app/dist
 COPY --chown=node:node --from=uibuild /app/dist /app/dist/public
+COPY --chown=node:node docker/resources/init.sh /init.sh
+
+RUN chmod +x /init.sh
 
 VOLUME ["/etc/letsencrypt","/data"]
 
-CMD [ "sh", "-c", "env > /etc/environment && exec /usr/bin/supervisord -ns -c /etc/supervisor/supervisord.conf" ]
+CMD [ "/init.sh" ]
 
 # USER node
