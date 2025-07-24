@@ -11,6 +11,7 @@ import { NginxServerConf } from './conf/nginx-server-conf';
 import { SSLManager } from './ssl-manager';
 import { DomainRepository } from '../../repositories/domain-repository';
 import ServerUtils from '../../utils/server';
+import Iptables, { Chain, Target } from '../../utils/iptables';
 
 export class NginxManager {
   static async addDomainServer(
@@ -30,23 +31,50 @@ export class NginxManager {
       .setHttpSSLCertificates(domain.sslPair);
 
     if (domain.oauth2ServicePort) {
-      const oauth2LocationConf: NginxLocationConf = new NginxLocationConf();
+      const oauth2conf: NginxLocationConf = new NginxLocationConf();
 
-      oauth2LocationConf
+      oauth2conf
         .addBlock('proxy_pass', `http://127.0.0.1:${domain.oauth2ServicePort}`)
         .addBlock('proxy_set_header Host', '$host')
-        .addBlock('proxy_set_header X-Real-IP', '$remote_addr')
-        .addBlock('proxy_set_header X-Auth-Request-Redirect', '$request_uri');
+        .addBlock('proxy_set_header X-Forwarded-Host', '$host')
+        .addBlock('proxy_set_header X-Real-IP', '$remote_addr');
 
-      serverConf.addBlock('location /oauth2/', oauth2LocationConf.getConf());
+      const oauth2LocationConf = oauth2conf.clone();
 
       oauth2LocationConf
+        .addBlock('proxy_set_header X-Auth-Request-Redirect', '$request_uri')
         .addBlock('proxy_set_header Content-Length', '""')
         .addBlock('proxy_pass_request_body', 'off');
+
+      serverConf.addBlock('location /oauth2/', oauth2LocationConf.getConf());
 
       serverConf.addBlock(
         'location = /oauth2/auth',
         oauth2LocationConf.getConf(),
+      );
+
+      const oauth2CallbackLocation = new NginxLocationConf();
+
+      oauth2CallbackLocation
+        .addBlock('proxy_pass', `http://127.0.0.1:${domain.oauth2ServicePort}`)
+        .addBlock('proxy_set_header Host', '$host')
+        .addBlock('proxy_set_header X-Forwarded-Host', '$host')
+        .addBlock('proxy_set_header X-Real-IP', '$remote_addr')
+        .addBlock('proxy_pass_request_headers', 'on')
+        .addBlock('error_page 403', '= @logout_and_retry');
+
+      serverConf.addBlock(
+        'location = /oauth2/callback',
+        oauth2CallbackLocation.getConf(),
+      );
+
+      const logoutAndRetryLocation = new NginxLocationConf();
+
+      logoutAndRetryLocation.addBlock('return 302', '/oauth2/sign_out');
+
+      serverConf.addBlock(
+        'location @logout_and_retry',
+        logoutAndRetryLocation.getConf(),
       );
     }
 
@@ -161,6 +189,8 @@ export class NginxManager {
   ): Promise<void> {
     await this.removeLocation(service.domain, service.pathLocation);
 
+    this.resetTCPConnections(service);
+
     if (restart) {
       await this.reloadServer();
     }
@@ -261,6 +291,8 @@ export class NginxManager {
       `/etc/nginx/stream.d/${service.identifier}.conf`,
     );
 
+    this.resetTCPConnections(service);
+
     if (restart) {
       await this.reloadServer();
     }
@@ -308,6 +340,35 @@ export class NginxManager {
 
   static async reloadServer(): Promise<void> {
     await CLI.exec(`nginx -s reload`);
+  }
+
+  private static async resetTCPConnections(
+    service: HttpService | TcpService,
+  ): Promise<void> {
+    try {
+      const rule = {
+        chain: Chain.OUTPUT,
+        outInterface: service.node.wgInterface,
+        destination: service.node.address,
+        protocol: 'tcp',
+        dport: `${service.backendPort}`,
+        target: Target.REJECT,
+        args: {
+          '--reject-with': 'tcp-reset',
+        },
+      };
+      Iptables.addRule(rule);
+      Iptables.deleteRule(rule);
+      // Try to close connection using conntrack
+      await CLI.exec(
+        `conntrack -D -p tcp --dst ${service.node.address} --dport ${service.backendPort}`,
+      );
+    } catch {
+      console.log(
+        'Warning: Unable to reject active connections using conntrack and iptables',
+      );
+      //
+    }
   }
 
   private static async addDefaultMainLocation(
