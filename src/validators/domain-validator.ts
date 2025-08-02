@@ -32,6 +32,7 @@ export interface DomainType {
   validation?: boolean;
   authentication?: boolean;
   allowedEmails?: string[];
+  skipAuthRoutes?: string;
 }
 
 export interface DomainFilterQueryParams extends FilterQueryDto {
@@ -50,16 +51,19 @@ export const domainFilterValidator: ObjectSchema<DomainFilterQueryParams> =
   });
 
 export const domainValidator: ObjectSchema<DomainType> = Joi.object({
-  domain: Joi.string()
-    .domain()
-    .when('skipValidation', {
-      is: true,
-      then: Joi.string().domain().required(),
-      otherwise: Joi.string()
-        .domain()
-        .external(nslookupResolvesServerIp)
-        .required(),
-    }),
+  domain: Joi.string().when('skipValidation', {
+    is: true,
+    then: Joi.string()
+      .pattern(
+        new RegExp(`^([a-zA-Z0-9-]+\\.)+([a-zA-Z]{2,})$`),
+        'domain structure',
+      )
+      .required(),
+    otherwise: Joi.string()
+      .domain()
+      .external(nslookupResolvesServerIp)
+      .required(),
+  }),
   ssl: Joi.string().when('skipValidation', {
     is: true,
     then: Joi.valid('self-signed').allow(null).optional(),

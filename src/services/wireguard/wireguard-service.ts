@@ -14,6 +14,7 @@ import {
 import IP_CIDR from '../../utils/ip-cidr';
 import config from '../../config';
 import { getPing } from '../../providers/node-monitor';
+import { logger } from '../../providers/logger';
 
 export interface ConnectionStatus {
   status: 'online' | 'offline' | 'idle';
@@ -173,6 +174,7 @@ class WireguardService {
   async getRuntimeInfo(
     nodes: Node[],
     wgInterface = 'wg0',
+    checkPing: boolean = true,
   ): Promise<NodeInfo[]> {
     try {
       const info = await WGCli.dumpRunTimeInfo(wgInterface);
@@ -183,7 +185,9 @@ class WireguardService {
 
         const nodeInfo = info?.filter((i) => i.publicKey === n.publicKey)[0];
 
-        const status = this.getTunnelStatus(n, nodeInfo);
+        const status = checkPing
+          ? this.getTunnelStatus(n, nodeInfo)
+          : undefined;
 
         return {
           ...nodeProperties,
@@ -198,7 +202,7 @@ class WireguardService {
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
-      console.error(e.message);
+      logger.error(e);
       return nodes;
     }
   }
@@ -269,9 +273,14 @@ class WireguardService {
 
   private async startWireguard(wgInterface = 'wg0'): Promise<void> {
     try {
-      await WGCli.quickUp(wgInterface);
+      const isLink = await WGCli.isLink(wgInterface);
+      if (isLink) {
+        await WGCli.syncConf(wgInterface);
+      } else {
+        await WGCli.quickUp(wgInterface);
+      }
     } catch (e) {
-      console.error(e);
+      logger.error(e);
       throw e;
     }
   }
@@ -281,7 +290,7 @@ class WireguardService {
       await WGCli.quickDown(wgInterface);
       await WGCli.quickUp(wgInterface);
     } catch (e) {
-      console.error(e);
+      logger.error(e);
       throw e;
     }
   }
