@@ -56,6 +56,9 @@ jest.mock('axios', () => {
 const mockSyncConf = jest.fn();
 const mockQuickUp = jest.fn();
 const mockQuickDown = jest.fn();
+const mockIsLink = jest.fn(() => {
+  return false;
+});
 const mockDumpRuntimeInfo = jest.fn();
 const mockPeerRuntimeInfo = jest.fn();
 
@@ -90,10 +93,13 @@ jest.mock('../../utils/cli.ts', () => {
   };
 });
 
+const mockNetAddRoute = jest.fn();
+const mockNetDelRoute = jest.fn();
+
 jest.mock('../../utils/net.ts', () => {
   return {
-    addRoute: jest.fn(),
-    delRoute: jest.fn(),
+    addRoute: mockNetAddRoute,
+    delRoute: mockNetDelRoute,
     isReachable: jest.fn(),
     nslookup: mockNslookup,
     checkCNAME: mockCheckCname,
@@ -102,17 +108,23 @@ jest.mock('../../utils/net.ts', () => {
     getAvailablePort: mockGetAvailablePort,
     getAvailableLocalPort: mockGetAvailablePort,
     checkPort: mockCheckPort,
+    getWireguardIP: jest.fn(() => config.wireguard.host),
   };
 });
 
 jest.mock('../../utils/iptables.ts', () => {
+  const actual = jest.requireActual('../../utils/iptables.ts');
   return {
-    ruleExists: jest.fn(),
-    showRules: jest.fn(),
-    addRules: jest.fn(),
-    addRule: jest.fn(),
-    deleteRules: jest.fn(),
-    deleteRule: jest.fn(),
+    __esModule: true,
+    ...actual,
+    default: {
+      ruleExists: jest.fn(),
+      showRules: jest.fn(),
+      addRules: jest.fn(),
+      addRule: jest.fn(),
+      deleteRules: jest.fn(),
+      deleteRule: jest.fn(),
+    },
   };
 });
 
@@ -146,6 +158,7 @@ jest.mock('../../utils/wg-cli.ts', () => {
     syncConf: mockSyncConf,
     quickUp: mockQuickUp,
     quickDown: mockQuickDown,
+    isLink: mockIsLink,
     dumpPeerRuntimeInfo: mockPeerRuntimeInfo,
     dumpRunTimeInfo: mockDumpRuntimeInfo,
   };
@@ -167,6 +180,8 @@ module.exports = {
   mockSaveToFile,
   mockGenPrivateKey,
   mockGenPublicKey,
+  mockPeerRuntimeInfo,
+  mockDumpRuntimeInfo,
   mockGenPreSharedKey,
   mockSyncConf,
   mockQuickUp,
@@ -175,6 +190,9 @@ module.exports = {
   mockRemoveDir,
   mockRemoveFile,
   mockNslookup,
+  mockNetAddRoute,
+  mockNetDelRoute,
+  mockIsLink,
   mockCheckCname,
   mockCheckPort,
   mockGetAvailablePort,

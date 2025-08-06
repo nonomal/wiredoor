@@ -31,7 +31,10 @@ export interface TcpServiceForm {
 
 export const tcpServiceValidator: ObjectSchema<TcpServiceForm> = Joi.object({
   name: Joi.string().required(),
-  domain: Joi.string().domain().allow(null, '').optional(),
+  domain: Joi.string()
+    .pattern(new RegExp(`^([a-zA-Z0-9-]+\\.)+([a-zA-Z]{2,})$`), 'domain structure')
+    .allow(null, '')
+    .optional(),
   proto: Joi.string().valid('tcp', 'udp').allow(null).optional(),
   backendHost: Joi.string().allow(null).optional(),
   backendPort: Joi.number().port().required(),
