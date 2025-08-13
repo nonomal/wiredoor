@@ -105,7 +105,10 @@ describe('TCP Services Service', () => {
 
     node = await nodesService.createNode(makeNodeData());
     gateway = await nodesService.createNode(
-      makeNodeData({ isGateway: true, gatewayNetwork: '172.8.0.0/24' }),
+      makeNodeData({
+        isGateway: true,
+        gatewayNetworks: [{ interface: 'eth0', subnet: '172.8.0.0/24' }],
+      }),
     );
 
     jest.clearAllMocks();
@@ -368,6 +371,9 @@ describe('TCP Services Service', () => {
       );
 
       expect(mockCLIExec.mock.calls).toEqual([
+        [
+          `conntrack -D -p tcp --dst ${created.node.address} --dport ${created.backendPort}`,
+        ],
         ['nginx -t'],
         ['nginx -s reload'],
       ]);
@@ -390,7 +396,12 @@ describe('TCP Services Service', () => {
         expect.stringContaining(`/n${node.id}s${created.id}_stream.conf`),
       );
 
-      expect(mockCLIExec).toHaveBeenCalledWith('nginx -s reload');
+      expect(mockCLIExec.mock.calls).toEqual([
+        [
+          `conntrack -D -p tcp --dst ${created.node.address} --dport ${created.backendPort}`,
+        ],
+        ['nginx -s reload'],
+      ]);
     });
   });
 
@@ -416,6 +427,9 @@ describe('TCP Services Service', () => {
       );
 
       expect(mockCLIExec.mock.calls).toEqual([
+        [
+          `conntrack -D -p tcp --dst ${created.node.address} --dport ${created.backendPort}`,
+        ],
         ['nginx -t'],
         ['nginx -s reload'],
       ]);
