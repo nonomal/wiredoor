@@ -3,6 +3,7 @@ import path from 'path';
 import { randomBytes } from 'crypto';
 import dotenv from 'dotenv';
 import bcrypt from 'bcrypt';
+import { logger } from '../providers/logger';
 
 dotenv.config();
 
@@ -41,7 +42,7 @@ function getJWTKey(): string {
     fs.writeFileSync(filePath, newKey, { mode: 0o600 });
     return newKey;
   } catch (error) {
-    console.error('Error loading or generating JWT key:', error);
+    logger.error({ err: error }, 'Error loading or generating JWT key:');
     throw error;
   }
 }
@@ -65,6 +66,7 @@ export default {
   },
   jwt: {
     secret: getJWTKey(),
+    algo: process.env.JWT_ALGORITHM || 'HS256',
   },
   server: {
     port_range: process.env.TCP_SERVICES_PORT_RANGE,
@@ -73,7 +75,7 @@ export default {
     logs: process.env.SERVER_LOGS_DIR || '/var/log/nginx',
   },
   wireguard: {
-    host: process.env.VPN_HOST || 'localhost',
+    host: process.env.VPN_HOST || '127.0.0.1',
     port: VPN_PORT,
     subnet: subnet,
     preUp: (process.env.WG_PRE_UP_SCRIPT || defaultPreUpScript)

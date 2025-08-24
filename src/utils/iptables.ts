@@ -1,4 +1,5 @@
 import { execSync } from 'child_process';
+import { logger } from '../providers/logger';
 
 export enum Table {
   filter = 'filter',
@@ -42,9 +43,9 @@ enum IptablesActions {
   REPLACE = '-R', // Replace rule
 }
 
-type TableStrings = keyof typeof Table;
-type ChainStrings = keyof typeof Chain | string;
-type TargetStrigs = keyof typeof Target;
+type TableStrings = Table;
+type ChainStrings = `${Chain}` | string;
+type TargetStrigs = Target;
 
 export interface IptablesRule {
   table?: TableStrings;
@@ -72,7 +73,7 @@ export default class Iptables {
     action: IptablesActions,
     rule: IptablesRule,
   ): string {
-    let cmd = `iptables -t ${rule.table ? rule.table : Table.filter} ${rule.chain} ${action}`;
+    let cmd = `iptables -t ${rule.table ? rule.table : Table.filter} ${action} ${rule.chain}`;
     if (rule.protocol) cmd += ` -p ${rule.protocol}`;
     if (rule.source) cmd += ` -s ${rule.source}`;
     if (rule.destination) cmd += ` -d ${rule.destination}`;
@@ -103,7 +104,7 @@ export default class Iptables {
       const output = execSync(`iptables -t ${table} -S`).toString();
       return output.trim().split('\n');
     } catch (error) {
-      console.error('Error al listar las reglas:', error);
+      logger.error(error, 'Error listing rules:');
       return [];
     }
   }
@@ -133,7 +134,7 @@ export default class Iptables {
       this.debugMessage(`Rule added: ${JSON.stringify(rule, null, 2)}`);
       return true;
     } catch (error) {
-      console.error('Error adding rule:', error);
+      logger.error(error, 'Error adding rule:');
       return false;
     }
   }
@@ -156,14 +157,14 @@ export default class Iptables {
       this.debugMessage(`Rule doesn't exists`);
       return true;
     }
-    const cmd = this.formatRule(IptablesActions.ADD, rule);
+    const cmd = this.formatRule(IptablesActions.DELETE, rule);
 
     try {
       this.execIptablesCmd(cmd);
       this.debugMessage(`Rule deleted: ${JSON.stringify(rule, null, 2)}`);
       return true;
     } catch (error) {
-      console.error('Error deleting rule:', error);
+      logger.error(error, 'Error deleting rule:');
       return false;
     }
   }
@@ -173,8 +174,7 @@ export default class Iptables {
     try {
       execSync(cmd, { stdio: 'ignore' });
     } catch (e) {
-      console.log('Error calling iptables');
-      console.error(e);
+      logger.error(e);
       throw e;
     }
   }
@@ -183,7 +183,7 @@ export default class Iptables {
     const debug = true;
 
     if (debug) {
-      console.log(m);
+      logger.debug(m);
     }
   }
 }

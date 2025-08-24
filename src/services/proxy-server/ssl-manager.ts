@@ -3,6 +3,7 @@ import FileManager from '../../utils/file-manager';
 import CLI from '../../utils/cli';
 import { SSLTermination, SSLCerts } from '../../database/models/domain';
 import config from '../../config';
+import { logger } from '../../providers/logger';
 
 const selfSignedCertificatePath = '/etc/nginx/ssl';
 const opensslConf = '/etc/openssl/openssl.cnf';
@@ -45,31 +46,6 @@ export class SSLManager {
     }
   }
 
-  static async generateDefaultCerts(): Promise<void> {
-    if (
-      FileManager.mkdirSync(`/data/ssl`) &&
-      FileManager.mkdirSync(selfSignedCertificatePath)
-    ) {
-      const defaultKey = `/data/ssl/privkey.key`;
-      const defaultCert = `/data/ssl/cert.crt`;
-      if (!FileManager.isPath(defaultCert) && !FileManager.isPath(defaultKey)) {
-        await CLI.exec(`openssl genpkey -algorithm RSA -out ${defaultKey}`);
-        await CLI.exec(
-          `openssl req -new -key ${defaultKey} -out /data/ssl/default.csr -config ${opensslConf}`,
-        );
-        await CLI.exec(
-          `openssl x509 -req -days 3650 -in /data/ssl/default.csr -signkey ${defaultKey} -out ${defaultCert}`,
-        );
-      }
-      await CLI.exec(
-        `ln -sfn ${defaultKey} ${selfSignedCertificatePath}/privkey.key`,
-      );
-      await CLI.exec(
-        `ln -sfn ${defaultCert} ${selfSignedCertificatePath}/cert.crt`,
-      );
-    }
-  }
-
   static async getCertbotCertificates(domain: string): Promise<SSLCerts> {
     const certPath = `/etc/letsencrypt/live/${domain}`;
 
@@ -98,7 +74,7 @@ export class SSLManager {
       try {
         await CLI.exec(`certbot delete --cert-name ${domain} -n`);
       } catch (e) {
-        console.error(e);
+        logger.error(e);
       }
     }
   }

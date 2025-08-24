@@ -1,4 +1,4 @@
-import { ObjectSchema } from 'joi';
+import { ObjectSchema, ValidationError } from 'joi';
 import Joi from './joi-validator';
 import { FilterQueryDto } from '../repositories/filters/repository-query-filter';
 import { nslookupResolvesServerIp } from './domain-validator';
@@ -12,7 +12,113 @@ export const validateServiceDomain = async (c: string): Promise<string> => {
     return c;
   }
 
+  const { error } = Joi.string().domain().validate(c);
+  if (error) {
+    throw new ValidationError(
+      `invalid domain`,
+      [
+        {
+          path: ['domain'],
+          message: `This field must contain a valid domain name`,
+          type: 'Error',
+        },
+      ],
+      null,
+    );
+  }
+
   return nslookupResolvesServerIp(c);
+};
+
+const validateBypassPaths = (input: string): string => {
+  if (!input) return '';
+
+  const lines = input
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const forbiddenChars = new RegExp(`["'\`;&<>\\\\]|[\\x00-\\x1F]`);
+
+  for (const [i, line] of lines.entries()) {
+    const lineNum = i + 1;
+
+    if (/^[A-Z]+!?=/.test(line)) {
+      throw new ValidationError(
+        `invalid method prefix at line ${lineNum}`,
+        [
+          {
+            path: ['skipAuthRoutes'],
+            message: `Line ${lineNum} should not contain HTTP method or operator prefix: "${line}"`,
+            type: 'bypass.path.invalidPrefix',
+          },
+        ],
+        input,
+      );
+    }
+
+    if (forbiddenChars.test(line)) {
+      throw new ValidationError(
+        `forbidden characters at line ${lineNum}`,
+        [
+          {
+            path: ['skipAuthRoutes'],
+            message: `Line ${lineNum} contains forbidden characters: "${line}"`,
+            type: 'bypass.path.forbiddenChar',
+          },
+        ],
+        input,
+      );
+    }
+
+    if (line.startsWith('^')) {
+      try {
+        new RegExp(line);
+      } catch {
+        throw new ValidationError(
+          `invalid regex at line ${lineNum}`,
+          [
+            {
+              path: ['skipAuthRoutes'],
+              message: `Line ${lineNum} is not a valid regular expression: "${line}"`,
+              type: 'bypass.path.invalidRegex',
+            },
+          ],
+          input,
+        );
+      }
+    } else {
+      if (!line.startsWith('/')) {
+        throw new ValidationError(
+          `invalid path at line ${lineNum}`,
+          [
+            {
+              path: ['skipAuthRoutes'],
+              message: `Line ${lineNum} must start with '/' or '^': "${line}"`,
+              type: 'bypass.path.invalidPath',
+            },
+          ],
+          input,
+        );
+      }
+
+      if (/\s/.test(line)) {
+        throw new ValidationError(
+          `path contains whitespace at line ${lineNum}`,
+          [
+            {
+              path: ['skipAuthRoutes'],
+              message: `Line ${lineNum} contains whitespace and is not valid: "${line}"`,
+              type: 'bypass.path.whitespace',
+            },
+          ],
+          input,
+        );
+      }
+    }
+  }
+
+  return input;
 };
 
 export const ttlValidator = Joi.string()
@@ -30,6 +136,8 @@ export interface HttpServiceType {
   backendProto?: string;
   allowedIps?: string[];
   blockedIps?: string[];
+  requireAuth?: boolean;
+  skipAuthRoutes?: string;
   enabled?: boolean;
   ttl?: string;
   expiresAt?: Date;
@@ -51,14 +159,13 @@ export const httpServiceFilterValidator: ObjectSchema<HttpServiceFilterQueryPara
       .pattern(/,(asc|desc)$/)
       .optional(),
     nodeId: Joi.number().optional(),
-    domain: Joi.string().domain().optional(),
+    domain: Joi.string().optional(),
   });
 
 export const httpServiceValidator: ObjectSchema<HttpServiceType> = Joi.object({
   id: Joi.number().optional(),
   name: Joi.string().required(),
   domain: Joi.string()
-    .domain()
     .allow(null, '')
     .external(validateServiceDomain)
     .optional(),
@@ -75,9 +182,13 @@ export const httpServiceValidator: ObjectSchema<HttpServiceType> = Joi.object({
     .allow(null)
     .optional(),
   requireAuth: Joi.boolean().when('domain', {
-    is: Joi.string().domain(),
+    is: Joi.string(),
     then: Joi.boolean().allow(null).optional(),
     otherwise: Joi.boolean().valid(false).allow(null).optional(),
+  }),
+  skipAuthRoutes: Joi.when('requireAuth', {
+    is: true,
+    then: Joi.string().external(validateBypassPaths).allow('', null).optional(),
   }),
   ttl: ttlValidator,
 }).or('domain', 'pathLocation');

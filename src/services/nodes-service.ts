@@ -50,12 +50,16 @@ export class NodesService {
     return this.nodeFilter.apply(filters);
   }
 
-  public async getNodesRuntime(nodes?: Node[]): Promise<NodeInfo[]> {
+  public async getNodesRuntime(
+    nodes?: Node[],
+    wgInterface?: string,
+    checkPing?: boolean,
+  ): Promise<NodeInfo[]> {
     if (!nodes) {
       nodes = await this.getAll();
     }
 
-    return this.wireguardService.getRuntimeInfo(nodes);
+    return this.wireguardService.getRuntimeInfo(nodes, wgInterface, checkPing);
   }
 
   public async createNode(params: CreateNodeType): Promise<Node> {
@@ -99,7 +103,7 @@ export class NodesService {
         address: node.address,
         allowInternet: node.allowInternet,
         enabled: node.enabled,
-        gatewayNetwork: node.gatewayNetwork,
+        gatewayNetworks: node.gatewayNetworks,
         isGateway: node.isGateway,
       },
       node.wgInterface,
@@ -251,14 +255,18 @@ export class NodesService {
   }
 
   private async disableGateway(node: Node): Promise<void> {
-    if (node.isGateway) {
-      await Net.delRoute(node.gatewayNetwork, node.address);
+    if (node.isGateway && node.gatewayNetworks?.length) {
+      for (const network of node.gatewayNetworks) {
+        await Net.delRoute(network.subnet, node.address);
+      }
     }
   }
 
   private async configureGateway(node: Node): Promise<void> {
     if (node.isGateway) {
-      await Net.addRoute(node.gatewayNetwork, node.address);
+      for (const network of node.gatewayNetworks) {
+        await Net.addRoute(network.subnet, node.address, node.wgInterface);
+      }
     }
   }
 }
